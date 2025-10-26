@@ -10,7 +10,10 @@ bazel build //src:sfw
 
 To run the application:
 
-bazel run //src:sfw -- -l 1-2 -n 4
+sudo setcap cap_net_admin,cap_net_raw+ep bazel-bin/src/sfw
+bazel-bin/src/sfw -l 1-2 -n 4 --vdev=net_tap0,iface=tap0
 
-Where -l argument specifies DPDK to use cores 1 and 2
-and -n argument specifies DPDK to use 4 memory channels
+Where:
+   -l argument specifies DPDK to use cores 1 and 2
+   -n argument specifies DPDK to use 4 memory channels
+   --vdev argument creates a virtual tap interface to initate traffic from/to the VM through DPDK
