@@ -6,7 +6,7 @@ Project Goal: Create a stateful firewall that allows outbound connections and on
 
 Build the application:
 
-bazel build //src:sfw
+bazel build //:sfw
 
 To run the application:
 
@@ -16,4 +16,4 @@ bazel-bin/src/sfw -l 1-2 -n 4 --vdev=net_tap0,iface=tap0
 Where:
    -l argument specifies DPDK to use cores 1 and 2
    -n argument specifies DPDK to use 4 memory channels
-   --vdev argument creates a virtual tap interface to initate traffic from/to the VM through DPDK
+   --vdev argument creates a virtual tap interface to send/receive traffic from/to the VM via DPDK
