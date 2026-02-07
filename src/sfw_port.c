@@ -1,4 +1,5 @@
 #include "sfw_port.h"
+#include "sfw_pkt.h"
 
 uint16_t nic_port;
 uint16_t virtual_port;
@@ -87,42 +88,71 @@ sfw_port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 }
 
 void
-sfw_port_rx_pkt_rcv(uint16_t port_id, struct rte_mbuf **pkts, uint16_t nb_pkts)
+sfw_port_rx_pkt_rcv(uint16_t port_id, struct rte_hash *ct_table, struct rte_mbuf **pkts, uint16_t nb_pkts)
 {
     struct rte_mbuf *tx_bufs[nb_pkts];
+    uint16_t tx_count = 0;
 
     for (uint16_t i = 0; i < nb_pkts; i++) {
         struct rte_mbuf *this_pkt;
         struct rte_ether_hdr *eth;
+        struct rte_ipv4_hdr *ip;
+        sfw_pkt_dir_t pkt_dir;
+
+        if (port_id == virtual_port) {
+            pkt_dir = SFW_PKT_DIR_OUTBOUND;
+        } else if (port_id == nic_port) {
+            pkt_dir = SFW_PKT_DIR_INBOUND;
+        }
 
         this_pkt = pkts[i];
         eth = rte_pktmbuf_mtod(this_pkt, struct rte_ether_hdr *);
         printf("Processing incoming pkt from port %d src mac = " RTE_ETHER_ADDR_PRT_FMT ", dst mac = " RTE_ETHER_ADDR_PRT_FMT ", ethertype = %u\n",
                port_id, RTE_ETHER_ADDR_BYTES(&eth->src_addr), RTE_ETHER_ADDR_BYTES(&eth->dst_addr), eth->ether_type);
         fflush(stdout);
+
+        if (eth->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
+            int res;
+            ip = rte_pktmbuf_mtod_offset(this_pkt, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
+            res = sfw_pkt_parse_ipv4(pkt_dir, ip, ct_table);
+            if (res < 0) {
+                printf("Drop pkt since disallowed by SFW\n");
+                rte_pktmbuf_free(this_pkt);
+                continue;
+            }
+        } else if (eth->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP)) {
+            printf("Forwarding ARP packet transparently\n");
+            fflush(stdout);
+        } else {
+            printf("Drop pkt since not ipv4 or ARP\n");
+            fflush(stdout);
+            rte_pktmbuf_free(this_pkt);
+            continue;
+        }
+
         //rte_pktmbuf_free(this_pkt);
-        tx_bufs[i] = this_pkt;
+        tx_bufs[tx_count++] = this_pkt;
     }
 
     if (port_id == nic_port) {
         // Send packets out through the Virtual TAP port
-        const uint16_t nb_tx = rte_eth_tx_burst(virtual_port, 0, tx_bufs, nb_pkts);
-        if (nb_tx < nb_pkts) {
-            for (uint16_t i = nb_tx; i < nb_pkts; i++) {
+        const uint16_t nb_tx = rte_eth_tx_burst(virtual_port, 0, tx_bufs, tx_count);
+        if (nb_tx < tx_count) {
+            for (uint16_t i = nb_tx; i < tx_count; i++) {
                 rte_pktmbuf_free(tx_bufs[i]);
             }
         }
     } else if (port_id == virtual_port) {
         // Send packets out through the NIC port
-        const uint16_t nb_tx = rte_eth_tx_burst(nic_port, 0, tx_bufs, nb_pkts);
-        if (nb_tx < nb_pkts) {
-            for (uint16_t i = nb_tx; i < nb_pkts; i++) {
+        const uint16_t nb_tx = rte_eth_tx_burst(nic_port, 0, tx_bufs, tx_count);
+        if (nb_tx < tx_count) {
+            for (uint16_t i = nb_tx; i < tx_count; i++) {
                 rte_pktmbuf_free(tx_bufs[i]);
             }
         }
     } else {
         // Unknown port, free the packets
-        for (uint16_t i = 0; i < nb_pkts; i++) {
+        for (uint16_t i = 0; i < tx_count; i++) {
             rte_pktmbuf_free(tx_bufs[i]);
         }
     }

@@ -2,9 +2,11 @@
 #include <rte_common.h>
 #include <rte_ethdev.h>
 #include <rte_ether.h>
+#include <rte_timer.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "sfw_port.h"
+#include "sfw_ct.h"
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -12,6 +14,7 @@
 
 struct lcore_params {
     uint16_t port_id;
+    struct rte_hash *ct_table;
 };
 
 static int
@@ -25,10 +28,12 @@ lcore_rx_loop(void *arg)
         struct rte_mbuf *bufs[BURST_SIZE];
         const uint16_t nb_rx = rte_eth_rx_burst(portid, 0, bufs, BURST_SIZE);
 
-        if (nb_rx == 0)
-            continue;
-
-        sfw_port_rx_pkt_rcv(portid, bufs, nb_rx);
+        if (nb_rx > 0) {
+            sfw_port_rx_pkt_rcv(portid, params->ct_table, bufs, nb_rx);
+        }
+        if (portid == virtual_port) {
+            rte_timer_manage();
+        }
     }
     return 0;
 }
@@ -39,7 +44,7 @@ int main(int argc, char *argv[])
     struct rte_mempool *mbuf_pool;
     uint8_t portid;
     struct lcore_params params[RTE_MAX_LCORE];
-    unsigned int lcore_id;
+    unsigned int lcore_id, ct_timer_lcore;
 
     // Initialize the Environment Abstraction Layer (EAL).
     int ret = rte_eal_init(argc, argv);
@@ -47,6 +52,7 @@ int main(int argc, char *argv[])
     if (ret < 0) {
         rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
     }
+    rte_timer_subsystem_init();
 
     if (rte_lcore_count() < 2) {
         rte_exit(EXIT_FAILURE, "Error: This application needs at least 2 logical cores to run.\n");
@@ -88,10 +94,23 @@ int main(int argc, char *argv[])
         printf(" Port UP!\n");
     }
 
-    // Port ID 1 handled by main lcore
+    // Port ID 1 handled by worker lcore
     portid = 1;
     lcore_id = rte_get_next_lcore(rte_lcore_id(), 1, 0);
+
+    if (portid ==  virtual_port) {
+        ct_timer_lcore = lcore_id;
+    } else {
+        ct_timer_lcore = rte_lcore_id();
+    }
+
+    struct rte_hash *ct_table = sfw_ct_init(ct_timer_lcore);
+    if (ct_table == NULL) {
+        rte_exit(EXIT_FAILURE, "Error creating connection tracking hash table\n");
+    }
+
     params[lcore_id].port_id = portid;
+    params[lcore_id].ct_table = ct_table;
     rte_eal_remote_launch(lcore_rx_loop, (void *)&params[lcore_id], lcore_id);
     printf("Launching port %u on lcore %u\n", portid, lcore_id);
     fflush(stdout);
@@ -105,10 +124,12 @@ int main(int argc, char *argv[])
         struct rte_mbuf *bufs[BURST_SIZE];
         const uint16_t nb_rx = rte_eth_rx_burst(portid, 0, bufs, BURST_SIZE);
 
-        if (nb_rx == 0)
-            continue;
-
-        sfw_port_rx_pkt_rcv(portid, bufs, nb_rx);
+        if (nb_rx > 0) {
+            sfw_port_rx_pkt_rcv(portid, ct_table, bufs, nb_rx);
+        }
+        if (portid == virtual_port) {
+            rte_timer_manage();
+        }
     }
     return 0;
 }

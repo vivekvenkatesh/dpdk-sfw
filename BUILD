@@ -1,8 +1,12 @@
 # This defines a C executable target named "sfw"
 cc_binary(
     name = "sfw",
-    srcs = ["include/sfw_port.h",
+    srcs = ["include/sfw_ct.h",
+            "include/sfw_pkt.h",
+            "include/sfw_port.h",
             "src/sfw.c",
+            "src/sfw_ct.c",
+            "src/sfw_pkt.c",
             "src/sfw_port.c"],
     copts = [
         "-I/usr/local/include",
