@@ -6,12 +6,12 @@ Project Goal: Create a stateful firewall that allows outbound connections and on
 
 Build the application:
 
-bazel build //:sfw
+bazel build //:sfw -c dbg --strip=never
 
 To run the application:
 
-sudo setcap cap_net_admin,cap_net_raw+ep bazel-bin/src/sfw
-bazel-bin/src/sfw -l 1-2 -n 4 --vdev=net_tap0,iface=tap0
+sudo setcap cap_net_admin,cap_net_raw+ep bazel-bin/sfw
+bazel-bin/sfw -l 1-2 -n 4 --vdev=net_tap0,iface=tap0
 
 Where:
    -l argument specifies DPDK to use cores 1 and 2
