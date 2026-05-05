@@ -4,10 +4,12 @@ cc_binary(
     srcs = ["include/sfw_ct.h",
             "include/sfw_pkt.h",
             "include/sfw_port.h",
+            "include/sfw_log.h",
             "src/sfw.c",
             "src/sfw_ct.c",
             "src/sfw_pkt.c",
-            "src/sfw_port.c"],
+            "src/sfw_port.c",
+            "src/sfw_log.c"],
     copts = [
         "-I/usr/local/include",
         "-Iinclude",

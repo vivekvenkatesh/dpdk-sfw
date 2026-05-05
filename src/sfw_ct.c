@@ -1,4 +1,5 @@
 #include "sfw_ct.h"
+#include "sfw_log.h"
 #include <rte_hash.h>
 #include <rte_errno.h>
 #include <rte_mempool.h>
@@ -31,15 +32,13 @@ sfw_ct_insert(const struct rte_hash *h, const sfw_ct_entry_t *entry)
 
     res = rte_hash_add_key_data(h, &entry->out_key, (void *)entry);
     if (res < 0) {
-        printf("Failed to insert outbound CT entry\n");
-        fflush(stdout);
+        SFW_LOG("Failed to insert outbound CT entry\n");
         return -1;
     }
 
     res = rte_hash_add_key_data(h, &entry->in_key, (void *)entry);
     if (res < 0) {
-        printf("Failed to insert inbound CT entry\n");
-        fflush(stdout);
+        SFW_LOG("Failed to insert inbound CT entry\n");
         rte_hash_del_key(h, &entry->out_key);
         return -1;
     }
@@ -52,21 +51,18 @@ sfw_ct_delete(const struct rte_hash *h, const sfw_ct_key_t *out_key)
     int res;
     sfw_ct_entry_t *entry = sfw_ct_lookup(h, out_key);
     if (entry == NULL) {
-        printf("Failed to lookup outbound CT entry\n");
-        fflush(stdout);
+        SFW_LOG("Failed to lookup outbound CT entry\n");
         return -1;
     }
 
     res = rte_hash_del_key(h, out_key);
     if (res < 0) {
-        printf("Failed to delete outbound CT entry\n");
-        fflush(stdout);
+        SFW_LOG("Failed to delete outbound CT entry\n");
         return -1;
     }
     res = rte_hash_del_key(h, &entry->in_key);
     if (res < 0) {
-        printf("Failed to delete inbound CT entry\n");
-        fflush(stdout);
+        SFW_LOG("Failed to delete inbound CT entry\n");
         return -1;
     }
     return 0;
@@ -84,8 +80,7 @@ sfw_ct_timer_cb(__rte_unused struct rte_timer *timer, __rte_unused void *arg)
     while (rte_hash_iterate(h, &key, &data, &next) >= 0) {
         sfw_ct_entry_t *entry = (sfw_ct_entry_t *)data;
         if (entry->timeout <= now) {
-            printf("CT entry timeout reached, deleting entry\n");
-            fflush(stdout);
+            SFW_LOG("CT entry timeout reached, deleting entry\n");
             sfw_ct_delete(h, &entry->out_key);
             sfw_ct_entry_free(entry);
         }
@@ -118,7 +113,7 @@ sfw_ct_init(unsigned int lcore_id)
     };
     struct rte_hash *h = rte_hash_create(&params);
     if (h == NULL) {
-        printf("Unable to create connection tracking hash table with errno = %d\n", rte_errno);
+        SFW_LOG("Unable to create connection tracking hash table with errno = %d\n", rte_errno);
         return NULL;
     }
 
@@ -134,7 +129,7 @@ sfw_ct_init(unsigned int lcore_id)
     sfw_ct_mp = rte_mempool_create("sfw_ct_pool", count, sizeof(sfw_ct_entry_t), cache_size, 0,
                                    NULL, NULL, NULL, NULL, rte_socket_id(), 0);
     if (sfw_ct_mp == NULL) {
-        printf("Unable to create connection tracking mempool with errno = %d\n", rte_errno);
+        SFW_LOG("Unable to create connection tracking mempool with errno = %d\n", rte_errno);
         rte_hash_free(h);
         return NULL;
     }

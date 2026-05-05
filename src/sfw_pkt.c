@@ -1,4 +1,5 @@
 #include "sfw_pkt.h"
+#include "sfw_log.h"
 #include "sfw_ct.h"
 #include <rte_icmp.h>
 
@@ -42,10 +43,8 @@ static int sfw_pkt_handle_icmp(sfw_pkt_dir_t pkt_dir,
                                 struct rte_icmp_hdr *icmp_hdr,
                                 struct rte_hash *ct_table)
 {
-    printf("ICMP packet type=%u, code=%u, id=%u, seq=%u\n",
+    SFW_LOG("ICMP packet type=%u, code=%u, id=%u, seq=%u\n",
            icmp_hdr->icmp_type, icmp_hdr->icmp_code, icmp_hdr->icmp_ident, icmp_hdr->icmp_seq_nb);
-    fflush(stdout);
-
     switch (icmp_hdr->icmp_type) {
         case RTE_ICMP_TYPE_ECHO_REQUEST:
             if (pkt_dir == SFW_PKT_DIR_OUTBOUND) {
@@ -53,25 +52,21 @@ static int sfw_pkt_handle_icmp(sfw_pkt_dir_t pkt_dir,
                 int res;
 
                 if (ct_entry == NULL) {
-                    printf("Failed to allocate CT entry\n");
-                    fflush(stdout);
+                    SFW_LOG("Failed to allocate CT entry\n");
                     return -1;
                 }
                 sfw_pkt_entry_init_ipv4(ct_entry, ipv4_hdr);
                 sfw_pkt_entry_init_icmp(ct_entry, icmp_hdr);
                 res = sfw_ct_insert(ct_table, ct_entry);
                 if (res < 0) {
-                    printf("Failed to insert CT entry for ICMP request\n");
-                    fflush(stdout);
+                    SFW_LOG("Failed to insert CT entry for ICMP request\n");
                     sfw_ct_entry_free(ct_entry);
                     return -1;
                 }
-                printf("Successfully inserted CT entry for ICMP request (id=%u, seq=%u)\n",
+                SFW_LOG("Successfully inserted CT entry for ICMP request (id=%u, seq=%u)\n",
                        icmp_hdr->icmp_ident, icmp_hdr->icmp_seq_nb);
-                fflush(stdout);
-            } else {
-                printf("ICMP request from inbound direction not allowed\n");
-                fflush(stdout);
+                } else {
+                SFW_LOG("ICMP request from inbound direction not allowed\n");
                 return -1;
             }
             break;
@@ -88,24 +83,20 @@ static int sfw_pkt_handle_icmp(sfw_pkt_dir_t pkt_dir,
                 };
                 sfw_ct_entry_t *entry = sfw_ct_lookup(ct_table, &in_key);
                 if (entry == NULL) {
-                    printf("Failed to lookup CT entry for ICMP reply (id=%u, seq=%u)\n",
+                    SFW_LOG("Failed to lookup CT entry for ICMP reply (id=%u, seq=%u)\n",
                            icmp_hdr->icmp_ident, icmp_hdr->icmp_seq_nb);
-                    fflush(stdout);
                     return -1;
                 }
-                printf("Successfully looked up CT entry for ICMP reply (id=%u, seq=%u)\n",
+                SFW_LOG("Successfully looked up CT entry for ICMP reply (id=%u, seq=%u)\n",
                        icmp_hdr->icmp_ident, icmp_hdr->icmp_seq_nb);
-                fflush(stdout);
                 if (rte_get_timer_cycles() > entry->timeout) {
-                    printf("CT entry timeout\n");
-                    fflush(stdout);
+                    SFW_LOG("CT entry timeout\n");
                     return -1;
                 }
                 entry->state = SFW_CT_STATE_ESTABLISHED;
                 entry->last_seen = rte_get_timer_cycles();
             } else {
-                printf("ICMP reply from outbound direction not allowed\n");
-                fflush(stdout);
+                SFW_LOG("ICMP reply from outbound direction not allowed\n");
                 return -1;
             }
             break;
@@ -121,7 +112,7 @@ int sfw_pkt_parse_ipv4(sfw_pkt_dir_t pkt_dir,
 {
     uint8_t *src_ip = (uint8_t *)&ipv4_hdr->src_addr;
     uint8_t *dst_ip = (uint8_t *)&ipv4_hdr->dst_addr;
-    printf("IPv4 packet src ip = %u.%u.%u.%u, dst ip = %u.%u.%u.%u, protocol = %u\n",
+    SFW_LOG("IPv4 packet src ip = %u.%u.%u.%u, dst ip = %u.%u.%u.%u, protocol = %u\n",
            src_ip[0], src_ip[1], src_ip[2], src_ip[3],
            dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3],
            ipv4_hdr->next_proto_id);

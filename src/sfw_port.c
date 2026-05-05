@@ -1,4 +1,5 @@
 #include "sfw_port.h"
+#include "sfw_log.h"
 #include "sfw_pkt.h"
 
 uint16_t nic_port;
@@ -17,73 +18,55 @@ sfw_port_init(uint16_t port, struct rte_mempool *mbuf_pool)
         return -1;
     }
 
-    printf("DEBUG: Initializing port %u...\n", port);
-    fflush(stdout);
-
+    SFW_LOG("DEBUG: Initializing port %u...\n", port);
     retval = rte_eth_dev_info_get(port, &dev_info);
     if (retval != 0) {
-        printf("ERROR: rte_eth_dev_info_get() failed for port %u: %s\n",
+        SFW_LOG("ERROR: rte_eth_dev_info_get() failed for port %u: %s\n",
                port, strerror(-retval));
         return retval;
     }
     if ((strcmp(dev_info.driver_name, "net_vmxnet3")) == 0 ){
         nic_port = port;
-        printf("DEBUG: Port %u is of type NIC\n", port);
-        fflush(stdout);
-    } else if ((strcmp(dev_info.driver_name, "net_tap")) == 0 ){
+        SFW_LOG("DEBUG: Port %u is of type NIC\n", port);
+        } else if ((strcmp(dev_info.driver_name, "net_tap")) == 0 ){
         virtual_port = port;
-        printf("DEBUG: Port %u is of type Virtual TAP\n", port);
-        fflush(stdout);
-    }
+        SFW_LOG("DEBUG: Port %u is of type Virtual TAP\n", port);
+        }
 
     // Configure the Ethernet device.
-    printf("DEBUG: Calling rte_eth_dev_configure()...\n");
-    fflush(stdout);
+    SFW_LOG("DEBUG: Calling rte_eth_dev_configure()...\n");
     retval = rte_eth_dev_configure(port, rx_queues, tx_queues, &port_conf);
     if (retval != 0) {
         return retval;
     }
-    printf("DEBUG: rte_eth_dev_configure() Succeeded.\n");
-    fflush(stdout);
-
+    SFW_LOG("DEBUG: rte_eth_dev_configure() Succeeded.\n");
     // Allocate and set up 1 RX queue per Ethernet port.
-    printf("DEBUG: Calling rte_eth_rx_queue_setup()...\n");
-    fflush(stdout);
+    SFW_LOG("DEBUG: Calling rte_eth_rx_queue_setup()...\n");
     retval = rte_eth_rx_queue_setup(port, 0, RX_RING_SIZE,
                                     rte_eth_dev_socket_id(port), NULL, mbuf_pool);
     if (retval < 0) {
         return retval;
     }
-    printf("DEBUG: rte_eth_rx_queue_setup() Succeeded.\n");
-    fflush(stdout);
-
-    printf("DEBUG: Calling rte_eth_tx_queue_setup()...\n");
-    fflush(stdout);
+    SFW_LOG("DEBUG: rte_eth_rx_queue_setup() Succeeded.\n");
+    SFW_LOG("DEBUG: Calling rte_eth_tx_queue_setup()...\n");
     // Allocate and set up 1 TX queue per Ethernet port.
     retval = rte_eth_tx_queue_setup(port, 0, TX_RING_SIZE,
                                     rte_eth_dev_socket_id(port), NULL);
     if (retval < 0) {
         return retval;
     }
-    printf("DEBUG: rte_eth_tx_queue_setup() Succeeded.\n");
-    fflush(stdout);
-
-    printf("DEBUG: Calling rte_eth_dev_start()...\n");
-    fflush(stdout);
+    SFW_LOG("DEBUG: rte_eth_tx_queue_setup() Succeeded.\n");
+    SFW_LOG("DEBUG: Calling rte_eth_dev_start()...\n");
     // Start the Ethernet port.
     retval = rte_eth_dev_start(port);
     if (retval < 0) {
         return retval;
     }
-    printf("DEBUG: rte_eth_dev_start() Succeeded.\n");
-    fflush(stdout);
-
-    printf("DEBUG: Enabling promiscuous mode...\n");
-    fflush(stdout);
+    SFW_LOG("DEBUG: rte_eth_dev_start() Succeeded.\n");
+    SFW_LOG("DEBUG: Enabling promiscuous mode...\n");
     // Enable RX in promiscuous mode for the Ethernet device.
     rte_eth_promiscuous_enable(port);
-    printf("DEBUG: Port %u initialization finished.\n", port);
-    fflush(stdout);
+    SFW_LOG("DEBUG: Port %u initialization finished.\n", port);
     return 0;
 }
 
@@ -107,25 +90,21 @@ sfw_port_rx_pkt_rcv(uint16_t port_id, struct rte_hash *ct_table, struct rte_mbuf
 
         this_pkt = pkts[i];
         eth = rte_pktmbuf_mtod(this_pkt, struct rte_ether_hdr *);
-        printf("Processing incoming pkt from port %d src mac = " RTE_ETHER_ADDR_PRT_FMT ", dst mac = " RTE_ETHER_ADDR_PRT_FMT ", ethertype = %u\n",
+        SFW_LOG("Processing incoming pkt from port %d src mac = " RTE_ETHER_ADDR_PRT_FMT ", dst mac = " RTE_ETHER_ADDR_PRT_FMT ", ethertype = %u\n",
                port_id, RTE_ETHER_ADDR_BYTES(&eth->src_addr), RTE_ETHER_ADDR_BYTES(&eth->dst_addr), eth->ether_type);
-        fflush(stdout);
-
         if (eth->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) {
             int res;
             ip = rte_pktmbuf_mtod_offset(this_pkt, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
             res = sfw_pkt_parse_ipv4(pkt_dir, ip, ct_table);
             if (res < 0) {
-                printf("Drop pkt since disallowed by SFW\n");
+                SFW_LOG("Drop pkt since disallowed by SFW\n");
                 rte_pktmbuf_free(this_pkt);
                 continue;
             }
         } else if (eth->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP)) {
-            printf("Forwarding ARP packet transparently\n");
-            fflush(stdout);
-        } else {
-            printf("Drop pkt since not ipv4 or ARP\n");
-            fflush(stdout);
+            SFW_LOG("Forwarding ARP packet transparently\n");
+            } else {
+            SFW_LOG("Drop pkt since not ipv4 or ARP\n");
             rte_pktmbuf_free(this_pkt);
             continue;
         }

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "sfw_port.h"
+#include "sfw_log.h"
 #include "sfw_ct.h"
 
 #define NUM_MBUFS 8191
@@ -53,6 +54,9 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
     }
     rte_timer_subsystem_init();
+    if (sfw_log_init("dpdk-sfw.log", 10 * 1024 * 1024) != 0) {
+        rte_exit(EXIT_FAILURE, "Error initializing logger\n");
+    }
 
     if (rte_lcore_count() < 2) {
         rte_exit(EXIT_FAILURE, "Error: This application needs at least 2 logical cores to run.\n");
@@ -60,7 +64,7 @@ int main(int argc, char *argv[])
 
     // Get the number of available NICs in the system
     nb_ports = rte_eth_dev_count_avail();
-    printf("\n Number of NICs in the system = %u\n", nb_ports);
+    SFW_LOG("\n Number of NICs in the system = %u\n", nb_ports);
 
     if (nb_ports != 2) {
         rte_exit(EXIT_FAILURE, "Error: This application needs 1 NIC and 1 Virtual TAP port to run\n");
@@ -69,21 +73,19 @@ int main(int argc, char *argv[])
     // Create a new mempool for mbufs
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
-    printf("Mempool created\n");
+    SFW_LOG("Mempool created\n");
 
     for (portid=0; portid < nb_ports; portid++) {
         struct rte_eth_link link;
         int res;
 
-        printf("Initializing Port\n");
+        SFW_LOG("Initializing Port\n");
 
         if (sfw_port_init(portid, mbuf_pool) != 0) {
             rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 "\n", portid);
         }
 
-        printf("Waiting for port %u to be ready...", portid);
-        fflush(stdout);
-
+        SFW_LOG("Waiting for port %u to be ready...", portid);
         do {
             res = rte_eth_link_get_nowait(portid, &link);
             if (res < 0) {
@@ -91,7 +93,7 @@ int main(int argc, char *argv[])
             }
         } while (link.link_status == RTE_ETH_LINK_DOWN);
 
-        printf(" Port UP!\n");
+        SFW_LOG(" Port UP!\n");
     }
 
     // Port ID 1 handled by worker lcore
@@ -112,13 +114,10 @@ int main(int argc, char *argv[])
     params[lcore_id].port_id = portid;
     params[lcore_id].ct_table = ct_table;
     rte_eal_remote_launch(lcore_rx_loop, (void *)&params[lcore_id], lcore_id);
-    printf("Launching port %u on lcore %u\n", portid, lcore_id);
-    fflush(stdout);
-
+    SFW_LOG("Launching port %u on lcore %u\n", portid, lcore_id);
     // Port ID 0 handled by main lcore
     portid = 0;
-    printf("Launching port %u on lcore %u\n", portid, rte_lcore_id());
-    fflush(stdout);
+    SFW_LOG("Launching port %u on lcore %u\n", portid, rte_lcore_id());
     for (;;)
     {
         struct rte_mbuf *bufs[BURST_SIZE];
