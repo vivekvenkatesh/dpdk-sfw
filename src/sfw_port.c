@@ -28,10 +28,23 @@ sfw_port_init(uint16_t port, struct rte_mempool *mbuf_pool)
     if ((strcmp(dev_info.driver_name, "net_vmxnet3")) == 0 ){
         nic_port = port;
         SFW_LOG("DEBUG: Port %u is of type NIC\n", port);
-        } else if ((strcmp(dev_info.driver_name, "net_tap")) == 0 ){
-        virtual_port = port;
-        SFW_LOG("DEBUG: Port %u is of type Virtual TAP\n", port);
+    } else if ((strcmp(dev_info.driver_name, "net_tap")) == 0 ){
+        if (port == 0) {
+            nic_port = port;
+            SFW_LOG("DEBUG: Port %u is of type Virtual TAP (mapped to NIC)\n", port);
+        } else {
+            virtual_port = port;
+            SFW_LOG("DEBUG: Port %u is of type Virtual TAP\n", port);
         }
+    } else if ((strcmp(dev_info.driver_name, "net_pcap")) == 0 ){
+        if (port == 0) {
+            nic_port = port;
+            SFW_LOG("DEBUG: Port %u is of type PCAP (mapped to NIC)\n", port);
+        } else {
+            virtual_port = port;
+            SFW_LOG("DEBUG: Port %u is of type PCAP (mapped to Virtual TAP)\n", port);
+        }
+    }
 
     // Configure the Ethernet device.
     SFW_LOG("DEBUG: Calling rte_eth_dev_configure()...\n");

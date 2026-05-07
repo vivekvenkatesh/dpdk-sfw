@@ -39,6 +39,7 @@ cc_binary(
         "-lrte_regexdev",
         "-lrte_rawdev",
         "-lrte_power",
+        "-lrte_net_pcap",
         "-lrte_pcapng",
         "-lrte_member",
         "-lrte_lpm",
@@ -77,5 +78,15 @@ cc_binary(
         "-lrte_argparse",
         "-lrte_kvargs",
         "-lrte_log",
+    ],
+)
+
+sh_test(
+    name = "test_sfw",
+    srcs = ["tests/run_tests_bazel.sh"],
+    data = [
+        ":sfw",
+        "tests/conftest.py",
+        "tests/test_sfw.py",
     ],
 )

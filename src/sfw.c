@@ -70,8 +70,10 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "Error: This application needs 1 NIC and 1 Virtual TAP port to run\n");
     }
 
-    // Create a new mempool for mbufs
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    if (mbuf_pool == NULL) {
+        rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
+    }
 
     SFW_LOG("Mempool created\n");
 
