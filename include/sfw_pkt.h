@@ -11,7 +11,12 @@ typedef enum sfw_pkt_dir_t {
 } sfw_pkt_dir_t;
 
 // Shorter timeout for ICMP packets
-#define SFW_PKT_ICMP_TIMEOUT_IN_SECS 10
+#define SFW_PKT_ICMP_TIMEOUT_IN_SECS              10
+
+// TCP state-dependent timeouts
+#define SFW_PKT_TCP_SYN_TIMEOUT_IN_SECS           30    /**< Max wait for SYN-ACK */
+#define SFW_PKT_TCP_ESTABLISHED_TIMEOUT_IN_SECS   3600  /**< Idle established connection */
+#define SFW_PKT_TCP_CLOSING_TIMEOUT_IN_SECS       10    /**< Drain window after FIN/RST */
 
 int
 sfw_pkt_parse_ipv4(sfw_pkt_dir_t pkt_dir,

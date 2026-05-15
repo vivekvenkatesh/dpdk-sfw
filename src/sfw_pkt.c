@@ -2,6 +2,7 @@
 #include "sfw_log.h"
 #include "sfw_ct.h"
 #include <rte_icmp.h>
+#include <rte_tcp.h>
 
 static void sfw_pkt_entry_init_ipv4(sfw_ct_entry_t *entry,
                                     struct rte_ipv4_hdr *ipv4_hdr)
@@ -36,6 +37,21 @@ static void sfw_pkt_entry_init_icmp(sfw_ct_entry_t *entry,
     entry->in_key.icmp_code = 0;
     entry->in_key.icmp_id = icmp_hdr->icmp_ident;
     entry->in_key.icmp_seq = icmp_hdr->icmp_seq_nb;
+}
+
+static void sfw_pkt_entry_init_tcp(sfw_ct_entry_t *entry,
+                                    struct rte_tcp_hdr *tcp_hdr)
+{
+    entry->timeout = entry->last_seen +
+                     SFW_PKT_TCP_SYN_TIMEOUT_IN_SECS * rte_get_timer_hz();
+
+    /* Outbound Key */
+    entry->out_key.src_port = tcp_hdr->src_port;
+    entry->out_key.dst_port = tcp_hdr->dst_port;
+
+    /* Inbound Key (Reversed ports - expects reply from dst back to src) */
+    entry->in_key.src_port = tcp_hdr->dst_port;
+    entry->in_key.dst_port = tcp_hdr->src_port;
 }
 
 static int sfw_pkt_handle_icmp(sfw_pkt_dir_t pkt_dir,
@@ -106,6 +122,119 @@ static int sfw_pkt_handle_icmp(sfw_pkt_dir_t pkt_dir,
     return 0;
 }
 
+static int sfw_pkt_handle_tcp(sfw_pkt_dir_t pkt_dir,
+                               struct rte_ipv4_hdr *ipv4_hdr,
+                               struct rte_tcp_hdr *tcp_hdr,
+                               struct rte_hash *ct_table)
+{
+    uint8_t flags = tcp_hdr->tcp_flags;
+    uint8_t is_syn   = (flags & RTE_TCP_SYN_FLAG) && !(flags & RTE_TCP_ACK_FLAG);
+    uint8_t is_synack = (flags & RTE_TCP_SYN_FLAG) && (flags & RTE_TCP_ACK_FLAG);
+    uint8_t is_fin   = flags & RTE_TCP_FIN_FLAG;
+    uint8_t is_rst   = flags & RTE_TCP_RST_FLAG;
+    uint64_t time_in_cycles = rte_get_timer_cycles();
+
+    SFW_LOG("TCP packet flags=0x%02x, src_port=%u, dst_port=%u\n",
+            flags, rte_be_to_cpu_16(tcp_hdr->src_port),
+            rte_be_to_cpu_16(tcp_hdr->dst_port));
+
+    if (pkt_dir == SFW_PKT_DIR_OUTBOUND) {
+        if (is_syn) {
+            /* Outbound SYN: create new CT entry in NEW state */
+            sfw_ct_entry_t *ct_entry = sfw_ct_entry_alloc();
+            if (ct_entry == NULL) {
+                SFW_LOG("Failed to allocate CT entry for TCP SYN\n");
+                return -1;
+            }
+            sfw_pkt_entry_init_ipv4(ct_entry, ipv4_hdr);
+            sfw_pkt_entry_init_tcp(ct_entry, tcp_hdr);
+            int res = sfw_ct_insert(ct_table, ct_entry);
+            if (res < 0) {
+                SFW_LOG("Failed to insert CT entry for TCP SYN\n");
+                sfw_ct_entry_free(ct_entry);
+                return -1;
+            }
+            SFW_LOG("TCP SYN: CT entry inserted (src_port=%u, dst_port=%u)\n",
+                    rte_be_to_cpu_16(tcp_hdr->src_port),
+                    rte_be_to_cpu_16(tcp_hdr->dst_port));
+            return 0;
+        }
+
+        /* For all other outbound packets (data, FIN, RST), a CT entry must exist */
+        sfw_ct_key_t out_key = {
+            .src_ip   = ipv4_hdr->src_addr,
+            .dst_ip   = ipv4_hdr->dst_addr,
+            .protocol = ipv4_hdr->next_proto_id,
+            .src_port = tcp_hdr->src_port,
+            .dst_port = tcp_hdr->dst_port,
+        };
+        sfw_ct_entry_t *entry = sfw_ct_lookup(ct_table, &out_key);
+        if (entry == NULL) {
+            SFW_LOG("TCP outbound: no CT entry found, dropping\n");
+            return -1;
+        }
+
+        if (is_fin || is_rst) {
+            SFW_LOG("TCP outbound FIN/RST: transitioning to CLOSING\n");
+            entry->state   = SFW_CT_STATE_CLOSING;
+            entry->timeout = time_in_cycles +
+                             SFW_PKT_TCP_CLOSING_TIMEOUT_IN_SECS * rte_get_timer_hz();
+        }
+        entry->last_seen = time_in_cycles;
+        return 0;
+    }
+
+    /* --- INBOUND direction --- */
+
+    /* Block any unsolicited inbound SYN (connection initiation from outside) */
+    if (is_syn) {
+        SFW_LOG("TCP inbound SYN from outside not allowed, dropping\n");
+        return -1;
+    }
+
+    /* Look up CT entry using the inbound key */
+    sfw_ct_key_t in_key = {
+        .src_ip   = ipv4_hdr->src_addr,
+        .dst_ip   = ipv4_hdr->dst_addr,
+        .protocol = ipv4_hdr->next_proto_id,
+        .src_port = tcp_hdr->src_port,
+        .dst_port = tcp_hdr->dst_port,
+    };
+    sfw_ct_entry_t *entry = sfw_ct_lookup(ct_table, &in_key);
+    if (entry == NULL) {
+        SFW_LOG("TCP inbound: no CT entry found, dropping\n");
+        return -1;
+    }
+
+    if (is_synack) {
+        if (entry->state != SFW_CT_STATE_NEW) {
+            SFW_LOG("TCP inbound SYN-ACK: unexpected in state %d, dropping\n", entry->state);
+            return -1;
+        }
+        SFW_LOG("TCP inbound SYN-ACK: transitioning to ESTABLISHED\n");
+        entry->state   = SFW_CT_STATE_ESTABLISHED;
+        entry->timeout = time_in_cycles +
+                         SFW_PKT_TCP_ESTABLISHED_TIMEOUT_IN_SECS * rte_get_timer_hz();
+    } else if (is_fin || is_rst) {
+        SFW_LOG("TCP inbound FIN(%u)/RST(%u): transitioning to CLOSING\n", is_fin, is_rst);
+        entry->state   = SFW_CT_STATE_CLOSING;
+        entry->timeout = time_in_cycles +
+                         SFW_PKT_TCP_CLOSING_TIMEOUT_IN_SECS * rte_get_timer_hz();
+    } else {
+        /* Regular data packet: verify connection is established */
+        if (entry->state != SFW_CT_STATE_ESTABLISHED) {
+            SFW_LOG("TCP inbound data: connection not established (state=%d), dropping\n",
+                    entry->state);
+            return -1;
+        }
+        /* Refresh idle timeout */
+        entry->timeout = time_in_cycles +
+                         SFW_PKT_TCP_ESTABLISHED_TIMEOUT_IN_SECS * rte_get_timer_hz();
+    }
+    entry->last_seen = time_in_cycles;
+    return 0;
+}
+
 int sfw_pkt_parse_ipv4(sfw_pkt_dir_t pkt_dir,
                         struct rte_ipv4_hdr *ipv4_hdr,
                         struct rte_hash *ct_table)
@@ -119,6 +248,8 @@ int sfw_pkt_parse_ipv4(sfw_pkt_dir_t pkt_dir,
     switch (ipv4_hdr->next_proto_id) {
         case IPPROTO_ICMP:
             return sfw_pkt_handle_icmp(pkt_dir, ipv4_hdr, (struct rte_icmp_hdr *)(ipv4_hdr + 1), ct_table);
+        case IPPROTO_TCP:
+            return sfw_pkt_handle_tcp(pkt_dir, ipv4_hdr, (struct rte_tcp_hdr *)(ipv4_hdr + 1), ct_table);
         default:
             return -1;
     }

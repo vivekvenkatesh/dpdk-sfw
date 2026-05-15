@@ -34,9 +34,10 @@ typedef struct sfw_ct_key_t {
 } sfw_ct_key_t;
 
 typedef enum sfw_ct_state_t {
-    SFW_CT_STATE_NEW,
-    SFW_CT_STATE_ESTABLISHED,
-    SFW_CT_STATE_CLOSED,
+    SFW_CT_STATE_NEW,           /**< SYN sent, awaiting SYN-ACK */
+    SFW_CT_STATE_ESTABLISHED,   /**< Handshake complete, data flowing */
+    SFW_CT_STATE_CLOSING,       /**< FIN or RST seen, awaiting GC */
+    SFW_CT_STATE_CLOSED,        /**< GC pending deletion */
 } sfw_ct_state_t;
 
 typedef struct sfw_ct_entry_t {
@@ -45,7 +46,6 @@ typedef struct sfw_ct_entry_t {
     sfw_ct_state_t state;            /**< Connection state */
     uint64_t last_seen;              /**< Last seen timestamp in cycles */
     uint64_t timeout;                /**< Timeout timestamp in cycles */
-    //rte_spinlock_t lock;           /**< Spinlock for concurrent access */
 } sfw_ct_entry_t;
 
 /** Global RCU quiescent state variable. All reader lcores must register with this. */
