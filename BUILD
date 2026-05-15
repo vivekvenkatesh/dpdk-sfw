@@ -77,6 +77,7 @@ cc_binary(
         "-lrte_telemetry",
         "-lrte_argparse",
         "-lrte_kvargs",
+        "-lrte_rcu",
         "-lrte_log",
     ],
 )

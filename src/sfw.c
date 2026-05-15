@@ -3,6 +3,7 @@
 #include <rte_ethdev.h>
 #include <rte_ether.h>
 #include <rte_timer.h>
+#include <rte_rcu_qsbr.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "sfw_port.h"
@@ -23,6 +24,11 @@ lcore_rx_loop(void *arg)
 {
     struct lcore_params *params = (struct lcore_params *)arg;
     uint16_t portid = params->port_id;
+    unsigned int lcore_id = rte_lcore_id();
+
+    /* Register this lcore as a reader with the RCU subsystem */
+    rte_rcu_qsbr_thread_register(sfw_ct_qs, lcore_id);
+    rte_rcu_qsbr_thread_online(sfw_ct_qs, lcore_id);
 
     for (;;)
     {
@@ -32,6 +38,13 @@ lcore_rx_loop(void *arg)
         if (nb_rx > 0) {
             sfw_port_rx_pkt_rcv(portid, params->ct_table, bufs, nb_rx);
         }
+        /*
+         * Report quiescent state: at this point we no longer hold any
+         * sfw_ct_entry_t pointers from the previous burst. This allows
+         * the RCU defer queue to safely free entries deleted by the GC timer.
+         */
+        rte_rcu_qsbr_quiescent(sfw_ct_qs, lcore_id);
+
         if (portid == virtual_port) {
             rte_timer_manage();
         }
@@ -120,6 +133,11 @@ int main(int argc, char *argv[])
     // Port ID 0 handled by main lcore
     portid = 0;
     SFW_LOG("Launching port %u on lcore %u\n", portid, rte_lcore_id());
+
+    /* Register the main lcore as a reader with the RCU subsystem */
+    rte_rcu_qsbr_thread_register(sfw_ct_qs, rte_lcore_id());
+    rte_rcu_qsbr_thread_online(sfw_ct_qs, rte_lcore_id());
+
     for (;;)
     {
         struct rte_mbuf *bufs[BURST_SIZE];
@@ -128,6 +146,12 @@ int main(int argc, char *argv[])
         if (nb_rx > 0) {
             sfw_port_rx_pkt_rcv(portid, ct_table, bufs, nb_rx);
         }
+        /*
+         * Report quiescent state: at this point we no longer hold any
+         * sfw_ct_entry_t pointers from the previous burst.
+         */
+        rte_rcu_qsbr_quiescent(sfw_ct_qs, rte_lcore_id());
+
         if (portid == virtual_port) {
             rte_timer_manage();
         }

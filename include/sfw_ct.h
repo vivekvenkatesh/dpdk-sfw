@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <rte_hash.h>
 #include <rte_common.h>
+#include <rte_rcu_qsbr.h>
 
 #define MAX_FLOWS 1024
 #define SFW_CT_TIMER_INTERVAL_IN_SECS 1
@@ -46,6 +47,9 @@ typedef struct sfw_ct_entry_t {
     uint64_t timeout;                /**< Timeout timestamp in cycles */
     //rte_spinlock_t lock;           /**< Spinlock for concurrent access */
 } sfw_ct_entry_t;
+
+/** Global RCU quiescent state variable. All reader lcores must register with this. */
+extern struct rte_rcu_qsbr *sfw_ct_qs;
 
 struct rte_hash*
 sfw_ct_init(unsigned int lcore_id);
