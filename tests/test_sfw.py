@@ -87,6 +87,7 @@ def test_outbound_icmp_echo_request_allowed(dpdk_app):
         store=True,
     )
     sniffer.start()
+    time.sleep(0.1)
 
     sendp(req, iface=LAN_IFACE, verbose=False)
     time.sleep(SNIFF_TIMEOUT)
@@ -137,6 +138,7 @@ def test_stateful_icmp_reply_allowed(dpdk_app):
         store=True,
     )
     sniffer.start()
+    time.sleep(0.1)
 
     sendp(reply, iface=NIC_IFACE, verbose=False)
     time.sleep(SNIFF_TIMEOUT)
@@ -171,6 +173,7 @@ def test_unsolicited_inbound_icmp_dropped(dpdk_app):
         store=True,
     )
     sniffer.start()
+    time.sleep(0.1)
 
     sendp(pkt, iface=NIC_IFACE, verbose=False)
     time.sleep(SNIFF_TIMEOUT)
@@ -222,6 +225,7 @@ def test_unsolicited_reply_dropped_while_legitimate_session_exists(dpdk_app):
         store=True,
     )
     legit_sniffer.start()
+    time.sleep(0.1)
     sendp(legitimate_reply, iface=NIC_IFACE, verbose=False)
     time.sleep(SNIFF_TIMEOUT)
     legit_sniffer.stop()
@@ -237,6 +241,7 @@ def test_unsolicited_reply_dropped_while_legitimate_session_exists(dpdk_app):
         store=True,
     )
     unsol_sniffer.start()
+    time.sleep(0.1)
     sendp(unsolicited_reply, iface=NIC_IFACE, verbose=False)
     time.sleep(SNIFF_TIMEOUT)
     unsol_sniffer.stop()

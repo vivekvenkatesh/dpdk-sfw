@@ -10,6 +10,9 @@
 #include "sfw_log.h"
 #include "sfw_ct.h"
 
+struct rte_hash *global_ct_table = NULL;
+extern int sfw_cli_lcore_loop(void *arg);
+
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
 #define BURST_SIZE 32
@@ -71,8 +74,8 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "Error initializing logger\n");
     }
 
-    if (rte_lcore_count() < 2) {
-        rte_exit(EXIT_FAILURE, "Error: This application needs at least 2 logical cores to run.\n");
+    if (rte_lcore_count() < 3) {
+        rte_exit(EXIT_FAILURE, "Error: This application needs at least 3 logical cores to run.\n");
     }
 
     // Get the number of available NICs in the system
@@ -126,10 +129,16 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "Error creating connection tracking hash table\n");
     }
 
+    global_ct_table = ct_table;
+
     params[lcore_id].port_id = portid;
     params[lcore_id].ct_table = ct_table;
     rte_eal_remote_launch(lcore_rx_loop, (void *)&params[lcore_id], lcore_id);
     SFW_LOG("Launching port %u on lcore %u\n", portid, lcore_id);
+
+    unsigned int cli_lcore_id = rte_get_next_lcore(lcore_id, 1, 0);
+    rte_eal_remote_launch(sfw_cli_lcore_loop, NULL, cli_lcore_id);
+    SFW_LOG("Launching CLI on lcore %u\n", cli_lcore_id);
     // Port ID 0 handled by main lcore
     portid = 0;
     SFW_LOG("Launching port %u on lcore %u\n", portid, rte_lcore_id());

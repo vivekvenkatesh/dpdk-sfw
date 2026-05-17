@@ -71,7 +71,7 @@ def dpdk_app():
 
     cmd = [
         SFW_BIN,
-        "-l", "1-2", "-n", "4",
+        "-l", "1-3", "-n", "4",
         "--no-huge", "-m", "512", "--no-shconf", "--no-pci",
         "--vdev", f"net_tap0,iface={NIC_IFACE}",
         "--vdev", f"net_tap1,iface={LAN_IFACE}",

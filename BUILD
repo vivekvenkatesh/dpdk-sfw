@@ -9,6 +9,8 @@ cc_binary(
             "src/sfw_ct.c",
             "src/sfw_pkt.c",
             "src/sfw_port.c",
+            "src/sfw_cli.c",
+            "src/sfw_cli.h",
             "src/sfw_log.c"],
     copts = [
         "-I/usr/local/include",
